@@ -1,6 +1,6 @@
 ask         <- 7.3
 size        <- 100
-currPrice   <- 36.93
+spotPrice   <- 36.93
 strikePrice <- 35
 
 
@@ -22,14 +22,14 @@ overPrices <- data.frame(price=c(20:60),prof=prof)
 plot(overPrices)
 
 
-quotes <- c("GOOG","AAPL")
-
-selectedTags <- c("Name","Symbol","Ask","Bid")
 
 getQuotes <- function(quotes,selectedTags){
-  require(RCurl)
   
-  props <- read.delim("~/r_workspace/props.txt",stringsAsFactors=FALSE)
+  #get lookup file
+  link <- "https://gist.githubusercontent.com/devintjones/7025db970719051a0c57/raw/abe19ec170850a5fd20d1c63d0d1108b731d6d02/props"
+  temporaryFile <- tempfile()
+  download.file(link,destfile=temporaryFile)
+  props <- read.delim(temporaryFile,stringsAsFactors=FALSE)
   
   selectedTags <- data.frame(name=selectedTags)
   tags <- merge(selectedTags,props,by="name")
@@ -40,12 +40,10 @@ getQuotes <- function(quotes,selectedTags){
                 ,paste(tags$tag,collapse="")
                 ,"&e=.csv")
   
+  require(RCurl)
   response        <- getURL(url)
-  #clean data
-  responseCln     <- gsub("\\\\|\"|\n","",response)
-  rows            <- data.frame(strsplit(responseCln,"\r")[[1]],stringsAsFactors=FALSE)
-  rowList         <- sapply(rows[,1],function(x) strsplit(x,","))
-  data            <- data.frame(do.call("rbind",rowList),stringsAsFactors=FALSE)
+  data <- read.csv(text=response,header=F)
+  
   names(data)     <- tags$name
   row.names(data) <- NULL
   data$Ask        <- as.numeric(data$Ask)
@@ -53,4 +51,52 @@ getQuotes <- function(quotes,selectedTags){
   return(data)
 }
 
-data <- getQuotes(quotes,selectedTags)
+quotes <- c("GOOG","AAPL")
+selectedTags <- c("Name","Symbol","Ask","Bid")
+
+option <- c("MSFT150117C00040000")
+getYQL(option)
+getYQL <- function(quotes){
+  baseURL <- "http://query.yahooapis.com/v1/public/yql"
+  yql_query <- "select * from yahoo.finance.quotes where symbol in (\"!sub!\")"
+  yql_query <- gsub("!sub!",paste(quotes,collapse="\",\""),yql_query)
+  YQL <- URLencode(paste0(baseURL,
+                          "?q=",
+                          yql_query,
+                          "&format=json&env=store://datatables.org/alltableswithkeys"))
+  
+  response <- getURL(YQL)
+  
+  require(rjson)
+  query <- fromJSON(response)[["query"]]
+  
+  results <- query[["results"]]
+  
+  quote <- results[["quote"]]
+  
+  require(plyr)
+  data <- rbind.fill(lapply(quote, function(f) {
+    as.data.frame(Filter(Negate(is.null), f))
+  }))
+  data
+}
+
+start <- proc.time()
+data<- getYQL(quotes)
+proc.time()-start
+
+start <- proc.time()
+data <- suppressMessages(getQuotes(quotes,selectedTags))
+proc.time()-start
+
+
+request <- getURL("http://www.google.com/finance/option_chain?q=AAPL&output=json")
+class(request)
+data <- fromJSON(request)
+
+
+
+
+
+
+
