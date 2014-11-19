@@ -1,26 +1,27 @@
-ask         <- 7.3
-size        <- 100
-spotPrice   <- 36.93
-strikePrice <- 35
 
 
 
-calcProf <- function(futurePrice,strikePrice,size, ask){
-  value   <- (futurePrice - strikePrice)
+
+calcProf <- function(spotPrice,strikePrice,size, ask){
+  value   <- (spotPrice - strikePrice)
   rev     <- size * (value - ask)
   cost    <- ask*size
   profit  <- max(rev-cost,-1* cost)
   return(profit)
 }
-futurePrice <- currPrice
+
+ask         <- 7.3
+size        <- 100
+spotPrice   <- 36.93
+strikePrice <- 35
+
+##### Test return over a range of spot prices
 calcProf(currPrice,strikePrice,size, ask)
 
 prof <- mapply(calcProf,c(20:60),strikePrice,size,ask)
-
 overPrices <- data.frame(price=c(20:60),prof=prof)
-
 plot(overPrices)
-
+####
 
 
 getQuotes <- function(quotes,selectedTags){
@@ -56,6 +57,8 @@ selectedTags <- c("Name","Symbol","Ask","Bid")
 
 option <- c("MSFT150117C00040000")
 getYQL(option)
+
+
 getYQL <- function(quotes){
   baseURL <- "http://query.yahooapis.com/v1/public/yql"
   yql_query <- "select * from yahoo.finance.quotes where symbol in (\"!sub!\")"
@@ -69,15 +72,9 @@ getYQL <- function(quotes){
   
   require(rjson)
   query <- fromJSON(response)[["query"]]
-  
   results <- query[["results"]]
-  
-  quote <- results[["quote"]]
-  
-  require(plyr)
-  data <- rbind.fill(lapply(quote, function(f) {
-    as.data.frame(Filter(Negate(is.null), f))
-  }))
+
+  data <- crunchList(results[["quote"]])
   data
 }
 
@@ -90,11 +87,28 @@ data <- suppressMessages(getQuotes(quotes,selectedTags))
 proc.time()-start
 
 
-request <- getURL("http://www.google.com/finance/option_chain?q=AAPL&output=json")
-class(request)
-data <- fromJSON(request)
+raw_data <- getURL("http://www.google.com/finance/option_chain?q=AAPL&output=json")
+raw_data <- gsub("(\\w+)\\s*:",'"\\1":',raw_data) 
+require(rjson)
+data <- fromJSON(raw_data)
+
+crunchList <- function(list){
+  require(plyr)
+  data <- rbind.fill(lapply(list, function(f) {
+    as.data.frame(Filter(Negate(is.null), f))
+  }))
+  data
+}
 
 
+
+puts  <- crunchList(data[["puts"]])
+calls <- crunchList(data[["calls"]])
+
+underlying_id <- data[["underlying_id"]]
+underlying_price <- data[["underlying_price"]]
+
+expirations <- crunchList(data[["expirations"]])
 
 
 
