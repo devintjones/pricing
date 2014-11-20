@@ -55,8 +55,14 @@ getQuotes <- function(quotes,selectedTags){
 quotes <- c("GOOG","AAPL")
 selectedTags <- c("Name","Symbol","Ask","Bid")
 
-option <- c("MSFT150117C00040000")
-getYQL(option)
+crunchList <- function(list){
+  require(plyr)
+  data <- rbind.fill(lapply(list, function(f) {
+    as.data.frame(Filter(Negate(is.null), f))
+  }))
+  data
+}
+
 
 
 getYQL <- function(quotes){
@@ -78,6 +84,8 @@ getYQL <- function(quotes){
   data
 }
 
+
+###speed test for csv & lookup vs json
 start <- proc.time()
 data<- getYQL(quotes)
 proc.time()-start
@@ -85,32 +93,40 @@ proc.time()-start
 start <- proc.time()
 data <- suppressMessages(getQuotes(quotes,selectedTags))
 proc.time()-start
+#### json/yql wins
 
 
-raw_data <- getURL("http://www.google.com/finance/option_chain?q=AAPL&output=json")
-raw_data <- gsub("(\\w+)\\s*:",'"\\1":',raw_data) 
-require(rjson)
-data <- fromJSON(raw_data)
 
-crunchList <- function(list){
-  require(plyr)
-  data <- rbind.fill(lapply(list, function(f) {
-    as.data.frame(Filter(Negate(is.null), f))
-  }))
-  data
+getOptionsChain <- function(quote){
+  #can pass only 1 quote at a time
+  url <- paste0("http://www.google.com/finance/option_chain?q=",
+                quote,
+                "&output=json")
+  #more params: &expy=2014&expm=9&expd=20
+  
+  require(RCurl)
+  raw_data <- getURL(url)
+  
+  #fix json structure
+  raw_data <- gsub("(\\w+)\\s*:",'"\\1":',raw_data) 
+  
+  require(rjson)
+  data     <- fromJSON(raw_data)
+
+  underlying_id    <- data[["underlying_id"]]
+  underlying_price <- data[["underlying_price"]]
+  
+  puts        <- crunchList(data[["puts"]])
+  calls       <- crunchList(data[["calls"]])
+  expirations <- crunchList(data[["expirations"]])
+  
+  optionsChain <- list(quote=underlying_id,
+                       underlying_price=underlying_price,
+                       puts=puts,calls=calls,expirations=expirations)
+  return(optionsChain)
 }
 
-
-
-puts  <- crunchList(data[["puts"]])
-calls <- crunchList(data[["calls"]])
-
-underlying_id <- data[["underlying_id"]]
-underlying_price <- data[["underlying_price"]]
-
-expirations <- crunchList(data[["expirations"]])
-
-
-
+quote = "AAPL"
+getOptionsChain(quote)
 
 
