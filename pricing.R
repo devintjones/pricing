@@ -140,6 +140,10 @@ getHistoricalQuotes <- function(quotes,
   url <- paste0("http://query.yahooapis.com/v1/public/yql?q=",
                 "select * from yahoo.finance.historicaldata where symbol in ( \"!sub!\" ) and startDate = \"",startDate,"\" and endDate = \"",endDate,"\"",
                 "&format=json&env=store://datatables.org/alltableswithkeys")
+  #url <- paste0("http://query.yahooapis.com/v1/public/yql?q=",
+  #              "select * from yahoo.finance.historicaldata where symbol in ( \"!sub!\" ) and startDate = \"11-10-2014\" and endDate = \"11-15-2014\"",
+  #              "&format=json&env=store://datatables.org/alltableswithkeys")
+  
   url <- gsub("!sub!",paste(quotes,collapse="\",\""),url)
   url <- URLencode(url)
   
@@ -159,11 +163,8 @@ getHistoricalQuotes <- function(quotes,
   return(crunchList(quote))
 }
 quotes    <- c("BAC","JPM")
-today     <- Sys.Date()
-daysAgo30 <- today - 15
-getHistoricalQuotes(quotes,today,daysAgo30)
+endDate <- as.Date("11-18-2014","%m-%d-%Y")
+startDate     <- endDate -5
+getHistoricalQuotes(quotes,startDate,endDate)
 
-
-startDate <- today
-endDate <- daysAgo30
 
