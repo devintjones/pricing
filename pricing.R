@@ -130,3 +130,40 @@ quote = "AAPL"
 getOptionsChain(quote)
 
 
+
+getHistoricalQuotes <- function(quotes,
+                                startDate,
+                                endDate){
+  startDate <- as.character(startDate)
+  endDate   <- as.character(endDate)
+  
+  url <- paste0("http://query.yahooapis.com/v1/public/yql?q=",
+                "select * from yahoo.finance.historicaldata where symbol in ( \"!sub!\" ) and startDate = \"",startDate,"\" and endDate = \"",endDate,"\"",
+                "&format=json&env=store://datatables.org/alltableswithkeys")
+  url <- gsub("!sub!",paste(quotes,collapse="\",\""),url)
+  url <- URLencode(url)
+  
+  require(RCurl)
+  raw_data <- getURL(url)
+  require(rjson)
+  data     <- fromJSON(raw_data)
+  query    <- data[["query"]]
+  
+  count    <- query[["count"]]
+  created  <- query[["created"]]
+  lang     <- query[["lang"]]
+  results  <- query[["results"]]
+  
+  quote    <- results[["quote"]]
+  
+  return(crunchList(quote))
+}
+quotes    <- c("BAC","JPM")
+today     <- Sys.Date()
+daysAgo30 <- today - 15
+getHistoricalQuotes(quotes,today,daysAgo30)
+
+
+startDate <- today
+endDate <- daysAgo30
+
