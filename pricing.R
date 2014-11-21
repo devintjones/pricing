@@ -160,11 +160,27 @@ getHistoricalQuotes <- function(quotes,
   
   quote    <- results[["quote"]]
   
-  return(crunchList(quote))
+  data     <- crunchList(quote)
+  data     <- within(data,{
+    Close <- as.numeric(levels(Close))[Close]
+    Open  <- as.numeric(levels(Open))[Open]
+    High  <- as.numeric(levels(High))[High]
+    Low   <- as.numeric(levels(Low))[Low]
+    Volume<- as.numeric(levels(Volume))[Volume]
+    Adj_Close <- as.numeric(levels(Adj_Close))[Adj_Close]
+    Date  <- as.Date(Date)  
+  })
+  return(data)
 }
-quotes    <- c("BAC","JPM")
-endDate <- as.Date("11-18-2014","%m-%d-%Y")
-startDate     <- endDate -5
-getHistoricalQuotes(quotes,startDate,endDate)
 
+quotes        <- c("BAC","JPM")
+endDate       <- as.Date("11-18-2014","%m-%d-%Y")
+startDate     <- endDate -30
+data <- getHistoricalQuotes(quotes,startDate,endDate)
+databackup <- data
+#as.numeric(levels(databackup$Close))[databackup$Close]
+#class(databackup$Close)
+library(ggplot2)
+plot <- ggplot(data=data,aes(x=Date,y=Close,color=Symbol)) + geom_line()
+plot
 
