@@ -113,22 +113,32 @@ getOptionsChain <- function(quote){
   require(rjson)
   data     <- fromJSON(raw_data)
 
-  underlying_id    <- data[["underlying_id"]]
-  underlying_price <- data[["underlying_price"]]
+  #underlying_id    <- data[["underlying_id"]]
+  #underlying_price <- data[["underlying_price"]]
   
   puts        <- crunchList(data[["puts"]])
+  puts        <- cbind(type="put",puts)
   calls       <- crunchList(data[["calls"]])
-  expirations <- crunchList(data[["expirations"]])
+  calls       <- cbind(type="call",calls)
   
-  optionsChain <- list(quote=underlying_id,
-                       underlying_price=underlying_price,
-                       puts=puts,calls=calls,expirations=expirations)
-  return(optionsChain)
+  optionsDF   <- rbind(puts,calls)
+  optionsDF   <- cbind(quote,optionsDF)
+  
+  #expirations <- crunchList(data[["expirations"]])
+  
+  #optionsChain <- list(quote=underlying_id,
+  #                     underlying_price=underlying_price,
+  #                     puts=puts,calls=calls,expirations=expirations)
+  return(optionsDF)
 }
 
-quote = "AAPL"
-getOptionsChain(quote)
-
+getOptionsDF <- function(quotes){
+  optionsList <- lapply(quotes,getOptionsChain)
+  optionsDF   <- do.call("rbind",optionsList)
+  return(optionsDF)
+}
+quotes <- c("BAC","JPM")
+optionsDF <- getOptionsDF(quotes)
 
 
 getHistoricalQuotes <- function(quotes,
@@ -170,12 +180,12 @@ getHistoricalQuotes <- function(quotes,
     Adj_Close <- as.numeric(levels(Adj_Close))[Adj_Close]
     Date  <- as.Date(Date)  
   })
-  require(data.table)
-  return(data.table(data)
+
+  return(data)
 }
 
 quotes        <- c("BAC","JPM")
-endDate       <- as.Date("11-18-2014","%m-%d-%Y")
+endDate       <- Sys.Date()
 startDate     <- endDate -30
 historical <- getHistoricalQuotes(quotes,startDate,endDate)
 
@@ -189,14 +199,50 @@ lagpad <- function(x,k){
   if(k > 0) {
     newX <- c(rep(NA,k),x[1:length(x)-k])
   } else if (k < 0) {
-    newX <- c(x[1+abs(k):length(x)],rep(NA,abs(k))) }
+    newX <- c(x[1+abs(k):length(x)]) }
   return(newX)
 }
 
-historical <- within(historical, lag <- lagpad(Close,-1))
-head(historical)
+
+getParams <- function(historical){
+  detach("package:dplyr")
+  suppressPackageStartupMessages(library(dplyr))
+  dplyrHist <- historical %>% 
+                arrange(Symbol, desc(Date)) %>% 
+                group_by(Symbol) %>% 
+                mutate(lagClose = lagpad(Close,-1),
+                       diff  = Close-lagClose ) %>%
+                summarise(stdev = sd(diff,na.rm=T),
+                          drift = mean(diff,na.rm=T),
+                          days  = n(),
+                          date  = max(Date),
+                          price = first(Close))
+  return(dplyrHist)
+}
+
+params <- getParams(historical)
+
+#Geometric Brownian Motion.
+#http://en.wikipedia.org/wiki/Geometric_Brownian_motion
+GBM <- function(price,drift,stdev,t=1){
+  price * exp( ( drift - .5*stdev**2 ) * t + stdev * rnorm(1,0,t) )
+}
+
+#Simpler GBM
+#http://www.columbia.edu/~ks20/FE-Notes/4700-07-Notes-GBM.pdf
+simpleGBM <- function(price,drift,stdev,t=1){
+  price * exp(  drift * t + stdev * rnorm(1,0,t) )
+}
 
 
+
+head(params)
+
+#data.table should be faster
+require(data.table)
+historicalDT <- data.table(historical)
+historicalDT <- historicalDT[order(Symbol,-Date)]
+historicalDT <- historicalDT[,lagClose:=lagpad(Close,-1),by=c("Symbol")]
 
 
 
