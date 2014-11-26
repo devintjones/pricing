@@ -170,17 +170,33 @@ getHistoricalQuotes <- function(quotes,
     Adj_Close <- as.numeric(levels(Adj_Close))[Adj_Close]
     Date  <- as.Date(Date)  
   })
-  return(data)
+  require(data.table)
+  return(data.table(data)
 }
 
 quotes        <- c("BAC","JPM")
 endDate       <- as.Date("11-18-2014","%m-%d-%Y")
 startDate     <- endDate -30
-data <- getHistoricalQuotes(quotes,startDate,endDate)
-databackup <- data
-#as.numeric(levels(databackup$Close))[databackup$Close]
-#class(databackup$Close)
-library(ggplot2)
-plot <- ggplot(data=data,aes(x=Date,y=Close,color=Symbol)) + geom_line()
-plot
+historical <- getHistoricalQuotes(quotes,startDate,endDate)
+
+plotHistorical <- function(historical){
+  require(ggplot2)
+  plot <- ggplot(data=historical,aes(x=Date,y=Close,color=Symbol)) + geom_line()
+  plot
+}
+
+lagpad <- function(x,k){
+  if(k > 0) {
+    newX <- c(rep(NA,k),x[1:length(x)-k])
+  } else if (k < 0) {
+    newX <- c(x[1+abs(k):length(x)],rep(NA,abs(k))) }
+  return(newX)
+}
+
+historical <- within(historical, lag <- lagpad(Close,-1))
+head(historical)
+
+
+
+
 
