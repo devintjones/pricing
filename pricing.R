@@ -234,6 +234,10 @@ simpleGBM <- function(price,drift,stdev,t=1){
   price * exp(  drift * t + stdev * rnorm(1,0,t) )
 }
 
+test <- within(params, pTomorrow <- simpleGBM(price,drift,stdev))
+test
+
+simulation <- data.frame(matrix(vector(),30, 24, dimnames=list(c(), c())), stringsAsFactors=F)
 
 
 head(params)
