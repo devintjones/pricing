@@ -248,5 +248,6 @@ historicalDT <- data.table(historical)
 historicalDT <- historicalDT[order(Symbol,-Date)]
 historicalDT <- historicalDT[,lagClose:=lagpad(Close,-1),by=c("Symbol")]
 
+#test
 
 
