@@ -237,7 +237,7 @@ simpleGBM <- function(price,drift,stdev,t=1){
 test <- within(params, pTomorrow <- simpleGBM(price,drift,stdev))
 test
 
-simulation <- data.frame(matrix(vector(),30, 24, dimnames=list(c(), c())), stringsAsFactors=F)
+simulation <- data.frame(matrix(vector(),30, 1000, dimnames=list(c(), c())), stringsAsFactors=F)
 
 
 head(params)
