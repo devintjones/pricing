@@ -1,27 +1,24 @@
 
 
 
-
 valueCall <- function(spotPrice,strikePrice,ask){
   value   <- (spotPrice - strikePrice)
   rev     <- (value - ask)/ask
   profit  <- max(rev,-1)
   return(profit)
 }
-valueCall <- Vectorize(valueCall)
 
+#ask         <- 7.3
+#spotPrice   <- 36.93
+#strikePrice <- 35
 
-
-ask         <- 7.3
-spotPrice   <- 36.93
-strikePrice <- 35
-
-##### Test return over a range of spot prices
-prof <- mapply(valueCall,c(20:60),strikePrice,ask)
-overPrices <- data.frame(price=c(20:60),prof=prof)
-plot(overPrices)
-####
-
+plotvalueCall <- function(strikePrice,ask){
+  ##### Test return over a range of spot prices
+  prof <- mapply(valueCall,c(20:60),strikePrice,ask)
+  overPrices <- data.frame(price=c(20:60),prof=prof)
+  plot(overPrices)
+  ####
+}
 
 getQuotes <- function(quotes,selectedTags){
   
@@ -51,9 +48,6 @@ getQuotes <- function(quotes,selectedTags){
   return(data)
 }
 
-quotes <- c("GOOG","AAPL")
-selectedTags <- c("Name","Symbol","Ask","Bid")
-
 crunchList <- function(list){
   require(plyr)
   data <- rbind.fill(lapply(list, function(f) {
@@ -61,8 +55,6 @@ crunchList <- function(list){
   }))
   data
 }
-
-
 
 getYQL <- function(quotes){
   baseURL <- "http://query.yahooapis.com/v1/public/yql"
@@ -84,16 +76,17 @@ getYQL <- function(quotes){
 }
 
 
-###speed test for csv & lookup vs json
-start <- proc.time()
-data<- getYQL(quotes)
-proc.time()-start
-
-start <- proc.time()
-data <- suppressMessages(getQuotes(quotes,selectedTags))
-proc.time()-start
-#### json/yql wins
-
+speedTest <- function(quotes){
+  ###speed test for csv & lookup vs json
+  start <- proc.time()
+  data<- getYQL(quotes)
+  cat("YQL processing time:",proc.time()-start)
+  
+  start <- proc.time()
+  data <- suppressMessages(getQuotes(quotes,selectedTags))
+  cat("CSV processing time:",proc.time()-start)
+  #### json/yql wins
+}
 
 
 getOptionsChain <- function(quote){
@@ -111,7 +104,8 @@ getOptionsChain <- function(quote){
   
   require(rjson)
   data     <- fromJSON(raw_data)
-
+  
+  if(!"puts" %in% names(data)) stop("no options chain available for quote:",quote)
   #underlying_id    <- data[["underlying_id"]]
   #underlying_price <- data[["underlying_price"]]
   
@@ -121,8 +115,8 @@ getOptionsChain <- function(quote){
   calls       <- cbind(type="call",calls)
   
   optionsDF   <- rbind(puts,calls)
-  optionsDF   <- cbind(quote,optionsDF)
-  
+  optionsDF   <- data.frame(cbind(quote,optionsDF))
+
   optionsDF   <- within(optionsDF,{
     a      <- as.numeric(as.character(a))
     strike <- as.numeric(as.character(strike))
@@ -137,8 +131,7 @@ getOptionsDF <- function(quotes){
   optionsDF   <- do.call("rbind",optionsList)
   return(optionsDF)
 }
-quotes <- c("BAC","JPM")
-optionsDF <- getOptionsDF(quotes)
+
 
 
 getHistoricalQuotes <- function(quotes,
@@ -181,11 +174,6 @@ getHistoricalQuotes <- function(quotes,
   return(data)
 }
 
-quotes        <- c("BAC","JPM")
-endDate       <- Sys.Date()
-startDate     <- endDate -30
-historical <- getHistoricalQuotes(quotes,startDate,endDate)
-
 plotHistorical <- function(historical){
   require(ggplot2)
   plot <- ggplot(data=historical,aes(x=Date,y=Close,color=Symbol)) + geom_line()
@@ -209,15 +197,14 @@ getParams <- function(historical){
                 group_by(Symbol) %>% 
                 mutate(lagClose = lagpad(Close,-1),
                        diff  = Close-lagClose ) %>%
-                summarise(stdev = sd(Close,na.rm=T),
-                          drift = mean(diff,na.rm=T),
+                summarise(stdev = sd(diff,na.rm=T)/last(Close), #divide by the sqrt of # of trading days
+                          drift = mean(diff,na.rm=T)/last(Close),
                           days  = n(),
                           date  = max(Date),
                           price = first(Close))
   return(dplyrHist)
 }
 
-params <- getParams(historical)
 
 #Geometric Brownian Motion.
 #http://en.wikipedia.org/wiki/Geometric_Brownian_motion
@@ -243,13 +230,6 @@ countBizDays <- function(exp){
   numBizDays<- length(which(isBizday(inBetween)))
   return(numBizDays)
 }
-days <- countBizDays(unique(optionsDF$expiry))
-
-
-priceSim <- with(params, mapply(simpleGBM, price, drift, stdev,days/365,SIMPLIFY=F))
-names(priceSim) <- unique(params$Symbol)
-#hist(priceSim[["BAC"]])
-
 
 
 callUtil <- function(spotPrice,strikePrice,ask){
@@ -267,15 +247,33 @@ projectUtility <- function(sym,optionsDF,priceSim){
   
   data        <- mapply(makeData,calls$strike, calls$a,SIMPLIFY=F)
   data        <- data.frame(do.call("rbind",data))
-  #names(data) <- c("spot","strike","ask")
   data        <- within(data, utility <- mapply(callUtil,spot,strike,ask))
 }
 
-sym <- "BAC"
-data <- projectUtility(sym,optionsDF,priceSim)
 
+## define params
+sym <- "AAPL"
+quotes <- c("AAPL")
+endDate     <- Sys.Date()
+startDate   <- endDate -30
 
+#get data
+optionsDF   <- getOptionsDF(quotes)
+historical  <- getHistoricalQuotes(quotes,startDate,endDate)
+params      <- getParams(historical)
+head(historical)
 
+#simulate price up to option expiration
+days        <- countBizDays(unique(optionsDF$expiry))
+priceSim    <- with(params, mapply(simpleGBM, price, drift, stdev,days/252,SIMPLIFY=F))
+names(priceSim) <- unique(params$Symbol)
+
+hist(priceSim[[1]],breaks=100,col="blue")
+
+#evalute utility across simluartion
+data      <- projectUtility(sym,optionsDF,priceSim)
+
+#compute expectation
 expectedUtility <- data %>%
   group_by(strike,ask) %>%
   summarize(eU = mean(utility)) %>%
