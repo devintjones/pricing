@@ -2,23 +2,22 @@
 
 
 
-calcProf <- function(spotPrice,strikePrice,size, ask){
+valueCall <- function(spotPrice,strikePrice,ask){
   value   <- (spotPrice - strikePrice)
-  rev     <- size * (value - ask)
-  cost    <- ask*size
-  profit  <- max(rev-cost,-1* cost)
+  rev     <- (value - ask)/ask
+  profit  <- max(rev,-1)
   return(profit)
 }
+valueCall <- Vectorize(valueCall)
+
+
 
 ask         <- 7.3
-size        <- 100
 spotPrice   <- 36.93
 strikePrice <- 35
 
 ##### Test return over a range of spot prices
-calcProf(currPrice,strikePrice,size, ask)
-
-prof <- mapply(calcProf,c(20:60),strikePrice,size,ask)
+prof <- mapply(valueCall,c(20:60),strikePrice,ask)
 overPrices <- data.frame(price=c(20:60),prof=prof)
 plot(overPrices)
 ####
@@ -124,11 +123,12 @@ getOptionsChain <- function(quote){
   optionsDF   <- rbind(puts,calls)
   optionsDF   <- cbind(quote,optionsDF)
   
-  #expirations <- crunchList(data[["expirations"]])
+  optionsDF   <- within(optionsDF,{
+    a      <- as.numeric(as.character(a))
+    strike <- as.numeric(as.character(strike))
+    expiry <- as.Date(expiry, "%B %d, %Y")
+    })
   
-  #optionsChain <- list(quote=underlying_id,
-  #                     underlying_price=underlying_price,
-  #                     puts=puts,calls=calls,expirations=expirations)
   return(optionsDF)
 }
 
@@ -150,9 +150,6 @@ getHistoricalQuotes <- function(quotes,
   url <- paste0("http://query.yahooapis.com/v1/public/yql?q=",
                 "select * from yahoo.finance.historicaldata where symbol in ( \"!sub!\" ) and startDate = \"",startDate,"\" and endDate = \"",endDate,"\"",
                 "&format=json&env=store://datatables.org/alltableswithkeys")
-  #url <- paste0("http://query.yahooapis.com/v1/public/yql?q=",
-  #              "select * from yahoo.finance.historicaldata where symbol in ( \"!sub!\" ) and startDate = \"11-10-2014\" and endDate = \"11-15-2014\"",
-  #              "&format=json&env=store://datatables.org/alltableswithkeys")
   
   url <- gsub("!sub!",paste(quotes,collapse="\",\""),url)
   url <- URLencode(url)
@@ -212,7 +209,7 @@ getParams <- function(historical){
                 group_by(Symbol) %>% 
                 mutate(lagClose = lagpad(Close,-1),
                        diff  = Close-lagClose ) %>%
-                summarise(stdev = sd(diff,na.rm=T),
+                summarise(stdev = sd(Close,na.rm=T),
                           drift = mean(diff,na.rm=T),
                           days  = n(),
                           date  = max(Date),
@@ -230,24 +227,63 @@ GBM <- function(price,drift,stdev,t=1){
 
 #Simpler GBM
 #http://www.columbia.edu/~ks20/FE-Notes/4700-07-Notes-GBM.pdf
-simpleGBM <- function(price,drift,stdev,t=1){
-  price * exp(  drift * t + stdev * rnorm(1,0,t) )
+#http://www.r-bloggers.com/quantitative-finance-applications-in-r-5-an-introduction-to-monte-carlo-simulation/
+simpleGBM <- function(price,drift,stdev,t=1){ #t is in years
+  rands <- rnorm(1e4)
+  priceSim <- price * exp(  drift * t + stdev * rands * sqrt(t) )
+  return(priceSim)
 }
 
-test <- within(params, pTomorrow <- simpleGBM(price,drift,stdev))
-test
 
-simulation <- data.frame(matrix(vector(),30, 1000, dimnames=list(c(), c())), stringsAsFactors=F)
+#expect formate from optionsDF$expiry
+countBizDays <- function(exp){ 
+  require(timeDate)
+  today     <- Sys.Date()
+  inBetween <- timeDate(seq(today,exp,"days"))
+  numBizDays<- length(which(isBizday(inBetween)))
+  return(numBizDays)
+}
+days <- countBizDays(unique(optionsDF$expiry))
 
 
-head(params)
+priceSim <- with(params, mapply(simpleGBM, price, drift, stdev,days/365,SIMPLIFY=F))
+names(priceSim) <- unique(params$Symbol)
+#hist(priceSim[["BAC"]])
 
-#data.table should be faster
-require(data.table)
-historicalDT <- data.table(historical)
-historicalDT <- historicalDT[order(Symbol,-Date)]
-historicalDT <- historicalDT[,lagClose:=lagpad(Close,-1),by=c("Symbol")]
 
-#test
-#test2
+
+callUtil <- function(spotPrice,strikePrice,ask){
+  max( ((spotPrice - strikePrice) - ask)/ask,-1)
+}
+
+
+projectUtility <- function(sym,optionsDF,priceSim){
+  calls       <- subset(optionsDF,quote == sym & type == "call")
+  spot        <- priceSim[[sym]]
+
+  makeData <- function(strike,ask){
+    cbind(spot,strike,ask)
+  }
+  
+  data        <- mapply(makeData,calls$strike, calls$a,SIMPLIFY=F)
+  data        <- data.frame(do.call("rbind",data))
+  #names(data) <- c("spot","strike","ask")
+  data        <- within(data, utility <- mapply(callUtil,spot,strike,ask))
+}
+
+sym <- "BAC"
+data <- projectUtility(sym,optionsDF,priceSim)
+
+
+
+expectedUtility <- data %>%
+  group_by(strike,ask) %>%
+  summarize(eU = mean(utility)) %>%
+  ungroup() %>%
+  arrange(desc(eU))
+
+expectedUtility
+
+
+
 
